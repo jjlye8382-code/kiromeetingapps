@@ -1,0 +1,57 @@
+{
+  "name": "meeting-intelligence-platform",
+  "version": "1.0.0",
+  "description": "Advanced Meeting Intelligence & Productivity Platform",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:frontend": "npm run dev --workspace=apps/frontend",
+    "dev:backend": "concurrently \"npm run dev --workspace=apps/api-gateway\" \"npm run dev --workspace=apps/recording-service\" \"npm run dev --workspace=apps/transcription-service\" \"npm run dev --workspace=apps/analysis-service\" \"npm run dev --workspace=apps/action-items-service\" \"npm run dev --workspace=apps/collaboration-service\" \"npm run dev --workspace=apps/integration-service\" \"npm run dev --workspace=apps/notification-service\" \"npm run dev --workspace=apps/analytics-service\"",
+    "build": "npm run build --workspaces",
+    "test": "npm run test --workspaces",
+    "test:unit": "npm run test:unit --workspaces",
+    "test:integration": "npm run test:integration --workspaces",
+    "test:e2e": "npm run test:e2e --workspace=apps/frontend",
+    "test:coverage": "npm run test:coverage --workspaces",
+    "test:system-integration": "node scripts/run-system-integration-tests.js",
+    "test:system-integration:docker": "docker-compose -f docker-compose.integration-test.yml up --build --abort-on-container-exit integration-test-runner",
+    "test:uat": "node scripts/run-uat-tests.js",
+    "test:setup-data": "node scripts/setup-test-data.js",
+    "lint": "npm run lint --workspaces",
+    "lint:fix": "npm run lint:fix --workspaces",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md}\"",
+    "db:migrate": "npm run db:migrate --workspace=packages/database",
+    "db:seed": "npm run db:seed --workspace=packages/database",
+    "docker:build": "docker-compose build",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down",
+    "docker:test": "docker-compose -f docker-compose.test.yml up -d",
+    "docker:test:down": "docker-compose -f docker-compose.test.yml down",
+    "docker:integration-test:up": "docker-compose -f docker-compose.integration-test.yml up -d",
+    "docker:integration-test:down": "docker-compose -f docker-compose.integration-test.yml down -v",
+    "validate:tests": "node scripts/validate-tests.js",
+    "deploy:staging": "echo 'Deploy to staging'",
+    "deploy:prod": "node scripts/deploy-production.js",
+    "deploy:production": "node scripts/deploy-production.js"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@typescript-eslint/eslint-plugin": "^6.13.0",
+    "@typescript-eslint/parser": "^6.13.0",
+    "concurrently": "^8.2.2",
+    "eslint": "^8.54.0",
+    "eslint-config-prettier": "^9.0.0",
+    "eslint-plugin-prettier": "^5.0.1",
+    "prettier": "^3.1.0",
+    "typescript": "^5.3.0"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  }
+}

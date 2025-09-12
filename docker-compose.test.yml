@@ -1,0 +1,187 @@
+version: '3.8'
+
+services:
+  # Test Database
+  postgres-test:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: test_db
+      POSTGRES_USER: test
+      POSTGRES_PASSWORD: test
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_test_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test -d test_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Test Redis
+  redis-test:
+    image: redis:7-alpine
+    ports:
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Mock OpenAI Whisper Service
+  mock-whisper:
+    build:
+      context: .
+      dockerfile: packages/testing/docker/mock-whisper.Dockerfile
+    ports:
+      - "8001:8001"
+    environment:
+      - PORT=8001
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Mock Sentiment Analysis Service
+  mock-sentiment:
+    build:
+      context: .
+      dockerfile: packages/testing/docker/mock-sentiment.Dockerfile
+    ports:
+      - "8002:8002"
+    environment:
+      - PORT=8002
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # API Gateway (for integration tests)
+  api-gateway-test:
+    build:
+      context: .
+      dockerfile: apps/api-gateway/Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=test
+      - DATABASE_URL=postgresql://test:test@postgres-test:5432/test_db
+      - REDIS_URL=redis://redis-test:6379
+      - JWT_SECRET=test-jwt-secret
+    depends_on:
+      postgres-test:
+        condition: service_healthy
+      redis-test:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Recording Service (for integration tests)
+  recording-service-test:
+    build:
+      context: .
+      dockerfile: apps/recording-service/Dockerfile
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=test
+      - DATABASE_URL=postgresql://test:test@postgres-test:5432/test_db
+      - REDIS_URL=redis://redis-test:6379
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+      - AWS_REGION=us-east-1
+      - S3_BUCKET=test-recordings
+    depends_on:
+      postgres-test:
+        condition: service_healthy
+      redis-test:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Transcription Service (for integration tests)
+  transcription-service-test:
+    build:
+      context: .
+      dockerfile: apps/transcription-service/Dockerfile
+    ports:
+      - "3002:3002"
+    environment:
+      - NODE_ENV=test
+      - DATABASE_URL=postgresql://test:test@postgres-test:5432/test_db
+      - REDIS_URL=redis://redis-test:6379
+      - OPENAI_API_KEY=test-key
+      - WHISPER_SERVICE_URL=http://mock-whisper:8001
+    depends_on:
+      postgres-test:
+        condition: service_healthy
+      redis-test:
+        condition: service_healthy
+      mock-whisper:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3002/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Analysis Service (for integration tests)
+  analysis-service-test:
+    build:
+      context: .
+      dockerfile: apps/analysis-service/Dockerfile
+    ports:
+      - "3003:3003"
+    environment:
+      - NODE_ENV=test
+      - DATABASE_URL=postgresql://test:test@postgres-test:5432/test_db
+      - REDIS_URL=redis://redis-test:6379
+      - SENTIMENT_SERVICE_URL=http://mock-sentiment:8002
+    depends_on:
+      postgres-test:
+        condition: service_healthy
+      redis-test:
+        condition: service_healthy
+      mock-sentiment:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3003/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Frontend (for E2E tests)
+  frontend-test:
+    build:
+      context: .
+      dockerfile: apps/frontend/Dockerfile
+    ports:
+      - "3010:3000"
+    environment:
+      - NODE_ENV=test
+      - VITE_API_URL=http://api-gateway-test:3000
+      - VITE_WS_URL=ws://api-gateway-test:3000
+    depends_on:
+      api-gateway-test:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_test_data:
+
+networks:
+  default:
+    name: meeting-platform-test

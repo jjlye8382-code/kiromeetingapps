@@ -1,0 +1,353 @@
+version: '3.8'
+
+services:
+  # Test Database
+  test-postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: meeting_intelligence_test
+      POSTGRES_USER: test_user
+      POSTGRES_PASSWORD: test_password
+    ports:
+      - "5433:5432"
+    volumes:
+      - test_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test_user -d meeting_intelligence_test"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Test Redis
+  test-redis:
+    image: redis:7-alpine
+    ports:
+      - "6380:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - test_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Mock AI Services for Testing
+  mock-whisper:
+    build:
+      context: ./packages/testing/docker
+      dockerfile: mock-whisper.Dockerfile
+    ports:
+      - "8001:8001"
+    environment:
+      - PORT=8001
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mock-sentiment:
+    build:
+      context: ./packages/testing/docker
+      dockerfile: mock-sentiment.Dockerfile
+    ports:
+      - "8002:8002"
+    environment:
+      - PORT=8002
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # API Gateway
+  api-gateway:
+    build:
+      context: .
+      dockerfile: apps/api-gateway/Dockerfile
+    ports:
+      - "8080:3000"
+    environment:
+      - NODE_ENV=test
+      - DATABASE_URL=postgresql://test_user:test_password@test-postgres:5432/meeting_intelligence_test
+      - REDIS_URL=redis://test-redis:6379
+      - JWT_SECRET=test-jwt-secret-for-integration-tests
+      - OPENAI_API_KEY=test-openai-key
+      - WHISPER_SERVICE_URL=http://mock-whisper:8001
+      - SENTIMENT_SERVICE_URL=http://mock-sentiment:8002
+    depends_on:
+      test-postgres:
+        condition: service_healthy
+      test-redis:
+        condition: service_healthy
+      mock-whisper:
+        condition: service_healthy
+      mock-sentiment:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # Recording Service
+  recording-service:
+    build:
+      context: .
+      dockerfile: apps/recording-service/Dockerfile
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=test
+      - DATABASE_URL=postgresql://test_user:test_password@test-postgres:5432/meeting_intelligence_test
+      - REDIS_URL=redis://test-redis:6379
+      - AWS_ACCESS_KEY_ID=test-aws-key
+      - AWS_SECRET_ACCESS_KEY=test-aws-secret
+      - S3_BUCKET=test-recordings-bucket
+    depends_on:
+      test-postgres:
+        condition: service_healthy
+      test-redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Transcription Service
+  transcription-service:
+    build:
+      context: .
+      dockerfile: apps/transcription-service/Dockerfile
+    ports:
+      - "3002:3002"
+    environment:
+      - NODE_ENV=test
+      - DATABASE_URL=postgresql://test_user:test_password@test-postgres:5432/meeting_intelligence_test
+      - REDIS_URL=redis://test-redis:6379
+      - WHISPER_SERVICE_URL=http://mock-whisper:8001
+      - OPENAI_API_KEY=test-openai-key
+    depends_on:
+      test-postgres:
+        condition: service_healthy
+      test-redis:
+        condition: service_healthy
+      mock-whisper:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3002/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Analysis Service
+  analysis-service:
+    build:
+      context: .
+      dockerfile: apps/analysis-service/Dockerfile
+    ports:
+      - "3003:3003"
+    environment:
+      - NODE_ENV=test
+      - DATABASE_URL=postgresql://test_user:test_password@test-postgres:5432/meeting_intelligence_test
+      - REDIS_URL=redis://test-redis:6379
+      - SENTIMENT_SERVICE_URL=http://mock-sentiment:8002
+      - HUGGINGFACE_API_KEY=test-hf-key
+    depends_on:
+      test-postgres:
+        condition: service_healthy
+      test-redis:
+        condition: service_healthy
+      mock-sentiment:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3003/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Action Items Service
+  action-items-service:
+    build:
+      context: .
+      dockerfile: apps/action-items-service/Dockerfile
+    ports:
+      - "3004:3004"
+    environment:
+      - NODE_ENV=test
+      - DATABASE_URL=postgresql://test_user:test_password@test-postgres:5432/meeting_intelligence_test
+      - REDIS_URL=redis://test-redis:6379
+      - NLP_SERVICE_URL=http://mock-sentiment:8002
+    depends_on:
+      test-postgres:
+        condition: service_healthy
+      test-redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3004/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Collaboration Service
+  collaboration-service:
+    build:
+      context: .
+      dockerfile: apps/collaboration-service/Dockerfile
+    ports:
+      - "3005:3005"
+    environment:
+      - NODE_ENV=test
+      - DATABASE_URL=postgresql://test_user:test_password@test-postgres:5432/meeting_intelligence_test
+      - REDIS_URL=redis://test-redis:6379
+    depends_on:
+      test-postgres:
+        condition: service_healthy
+      test-redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3005/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Integration Service
+  integration-service:
+    build:
+      context: .
+      dockerfile: apps/integration-service/Dockerfile
+    ports:
+      - "3006:3006"
+    environment:
+      - NODE_ENV=test
+      - DATABASE_URL=postgresql://test_user:test_password@test-postgres:5432/meeting_intelligence_test
+      - REDIS_URL=redis://test-redis:6379
+      - GOOGLE_CLIENT_ID=test-google-client-id
+      - GOOGLE_CLIENT_SECRET=test-google-client-secret
+      - SLACK_BOT_TOKEN=test-slack-bot-token
+    depends_on:
+      test-postgres:
+        condition: service_healthy
+      test-redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3006/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Notification Service
+  notification-service:
+    build:
+      context: .
+      dockerfile: apps/notification-service/Dockerfile
+    ports:
+      - "3007:3007"
+    environment:
+      - NODE_ENV=test
+      - DATABASE_URL=postgresql://test_user:test_password@test-postgres:5432/meeting_intelligence_test
+      - REDIS_URL=redis://test-redis:6379
+      - SENDGRID_API_KEY=test-sendgrid-key
+      - SLACK_WEBHOOK_URL=https://hooks.slack.com/test
+    depends_on:
+      test-postgres:
+        condition: service_healthy
+      test-redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3007/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # User Management Service
+  user-management-service:
+    build:
+      context: .
+      dockerfile: apps/user-management-service/Dockerfile
+    ports:
+      - "3008:3008"
+    environment:
+      - NODE_ENV=test
+      - DATABASE_URL=postgresql://test_user:test_password@test-postgres:5432/meeting_intelligence_test
+      - REDIS_URL=redis://test-redis:6379
+      - JWT_SECRET=test-jwt-secret-for-integration-tests
+    depends_on:
+      test-postgres:
+        condition: service_healthy
+      test-redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3008/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Analytics Service
+  analytics-service:
+    build:
+      context: .
+      dockerfile: apps/analytics-service/Dockerfile
+    ports:
+      - "3009:3009"
+    environment:
+      - NODE_ENV=test
+      - DATABASE_URL=postgresql://test_user:test_password@test-postgres:5432/meeting_intelligence_test
+      - REDIS_URL=redis://test-redis:6379
+    depends_on:
+      test-postgres:
+        condition: service_healthy
+      test-redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3009/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # System Integration Test Runner
+  integration-test-runner:
+    build:
+      context: .
+      dockerfile: packages/testing/Dockerfile
+    environment:
+      - NODE_ENV=test
+      - API_GATEWAY_URL=http://api-gateway:3000
+      - TEST_JWT_TOKEN=test-jwt-token-for-integration-tests
+      - DATABASE_URL=postgresql://test_user:test_password@test-postgres:5432/meeting_intelligence_test
+      - REDIS_URL=redis://test-redis:6379
+    volumes:
+      - ./test-reports:/app/test-reports
+      - ./test-data:/app/test-data
+    depends_on:
+      api-gateway:
+        condition: service_healthy
+      recording-service:
+        condition: service_healthy
+      transcription-service:
+        condition: service_healthy
+      analysis-service:
+        condition: service_healthy
+      action-items-service:
+        condition: service_healthy
+      collaboration-service:
+        condition: service_healthy
+      integration-service:
+        condition: service_healthy
+      notification-service:
+        condition: service_healthy
+      user-management-service:
+        condition: service_healthy
+      analytics-service:
+        condition: service_healthy
+    command: ["npm", "run", "test:system-integration"]
+
+volumes:
+  test_postgres_data:
+  test_redis_data:
+
+networks:
+  default:
+    name: meeting-intelligence-test-network
